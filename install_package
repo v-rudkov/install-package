@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# stop execution in case of an error
+set -e
+
+# read the latest package version from the sfdx-project.json in the currect directory
+PACKAGE=$(cat sfdx-project.json | jq .packageAliases |jq -r 'to_entries[] | .value' | tail -1)
+
+# read the ord name as the first command line parameter
+ORG=$1
+
+echo "Retrieving dependencies for package Id: $PACKAGE"
+
+dependencies=$(sfdx force:data:soql:query -t -q "SELECT Dependencies FROM SubscriberPackageVersion WHERE Id='$PACKAGE'" --json \
+| jq .result.records[0].Dependencies)
+
+if [[ "$dependencies" != 'null' ]]; then
+    for dependent_package in $(echo "$dependencies" | jq .ids |jq -r 'to_entries[] | .value.subscriberPackageVersionId')
+    do
+        echo "Installing dependent package: $dependent_package"
+        sfdx force:package:install --package $dependent_package --publishwait 10 --wait 10 -u $ORG
+    done
+else
+    echo "The package has no dependencies"
+fi
+
+echo "Installing package: "$PACKAGE
+sfdx force:package:install --package $PACKAGE --publishwait 10 --wait 10 -u $ORG
+
+exit 0;
